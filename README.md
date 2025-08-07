@@ -1,1 +1,1 @@
-# pygootrader
+pyGooTrader - Automated Trading Experiments

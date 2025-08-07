@@ -1,0 +1,9 @@
+invoke
+pytest
+influxdb-client
+invoke
+pytest
+influxdb-client
+yfinance
+pandas
+alpha-vantage
