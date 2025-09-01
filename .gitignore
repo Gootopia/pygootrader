@@ -1,2 +1,4 @@
 
 influxdb/
+
+app/src/__pycache__/
