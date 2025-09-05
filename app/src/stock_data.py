@@ -2,10 +2,8 @@ import pandas as pd
 from datetime import datetime
 import plotly.graph_objects as go
 from tick_database import QuoteFields
-from datasources import Vantage, DataHelpers
+from datasources import PolygonIO, DataSourceHelpers
 #from database import get_client, tick
-
-
 
 class Subplot:
     def __init__(self, name: str, data: pd.Series, color: str = 'blue'):
@@ -25,7 +23,7 @@ class Ema(Subplot):
     
     def calculate(self, data: pd.DataFrame, period: int, type: QuoteFields = QuoteFields.close) -> pd.Series:
         """Compute exponential moving average for the given data and period"""
-        self.data = data[type.title()].ewm(span=period).mean()
+        self.data = data[type].ewm(span=period).mean()
         return self.data
 
 def plot_ohlc(data, ticker, additional_data=None):
@@ -33,7 +31,8 @@ def plot_ohlc(data, ticker, additional_data=None):
     from plotly.subplots import make_subplots
     
     # Format dates to YYYY-MM-DD
-    formatted_dates = [date.strftime('%Y-%m-%d') for date in data.index]
+    formatted_dates = [datetime.fromtimestamp(row[QuoteFields.date.value] / 1000).strftime('%Y-%m-%d') 
+                      for _, row in data.iterrows()]
     
     # Count subplots needed
     subplot_count = 1
@@ -45,14 +44,14 @@ def plot_ohlc(data, ticker, additional_data=None):
     
     # Add main OHLC data
     fig.add_trace(go.Ohlc(x=formatted_dates,
-                          open=data[QuoteFields.open.title()],
-                          high=data[QuoteFields.high.title()],
-                          low=data[QuoteFields.low.title()],
-                          close=data[QuoteFields.close.title()],
-                          hovertext=[f'Date: {date}<br>Open: ${row[QuoteFields.open.title()]:.2f}<br>' +
-                                     f'High: ${row[QuoteFields.high.title()]:.2f}<br>' +
-                                     f'Low: ${row[QuoteFields.low.title()]:.2f}<br>' +
-                                     f'Close: ${row[QuoteFields.close.title()]:.2f}'
+                          open=data[QuoteFields.open],
+                          high=data[QuoteFields.high],
+                          low=data[QuoteFields.low],
+                          close=data[QuoteFields.close],
+                          hovertext=[f'Date: {date}<br>Open: ${row[QuoteFields.open]:.2f}<br>' +
+                                     f'High: ${row[QuoteFields.high]:.2f}<br>' +
+                                     f'Low: ${row[QuoteFields.low]:.2f}<br>' +
+                                     f'Close: ${row[QuoteFields.close]:.2f}'
                                      for date, (_, row) in zip(formatted_dates, data.iterrows())]), row=1, col=1)
     
     # Add additional data
@@ -83,9 +82,11 @@ def plot_ohlc(data, ticker, additional_data=None):
                           categoryorder='category ascending',
                           rangeslider=dict(visible=False),
                           tickvals=[date for i, date in enumerate(formatted_dates) 
-                                   if data.index[i].weekday() == 0 and data.index[i].day <= 7],
+                                   if datetime.fromtimestamp(data.iloc[i][QuoteFields.date.value] / 1000).weekday() == 0 and 
+                                      datetime.fromtimestamp(data.iloc[i][QuoteFields.date.value] / 1000).day <= 7],
                           ticktext=[date for i, date in enumerate(formatted_dates) 
-                                   if data.index[i].weekday() == 0 and data.index[i].day <= 7]
+                                   if datetime.fromtimestamp(data.iloc[i][QuoteFields.date.value] / 1000).weekday() == 0 and 
+                                      datetime.fromtimestamp(data.iloc[i][QuoteFields.date.value] / 1000).day <= 7]
                       ))
     fig.show()
 
@@ -97,31 +98,25 @@ def ingest_to_influx(data, ticker, client, bucket):
         tick(client, bucket, ticker, row['Open'], row['Close'], row['High'], row['Low'], date.strftime('%Y-%m-%d'))
     print(f"Ingested {len(data)} records for {ticker} into InfluxDB")
 
-if __name__ == "__main__":
-    ticker = "SCHB"
-    api_key = "YO8PFTVHE5AVIE6NK8"  # Replace with your Alpha Vantage API key
-    
+if __name__ == "__main__":   
     # InfluxDB settings
     url = "http://influxdb:8086"
     token = "mytoken123"
     org = "myorg2"
     bucket = "testing"
     
-    if api_key is None:
-        print("Please set your Alpha Vantage API key")
-        print("Get free API key at: https://www.alphavantage.co/support/#api-key")
-    else:
-        data_vantage = Vantage(api_key)
-        try:
-            data = data_vantage.get_data(ticker, 365)
-            DataHelpers.display_ohlc(data, ticker)
-            ema = Ema(None, None, 20)
-            ema_data = ema.calculate(data, 20)
-            additional_data = {"20EMA": {"data": ema, "main_pane": True}}
-            plot_ohlc(data, ticker, additional_data)
-            print(f"\nRetrieved {len(data)} trading days of data")
-            
-            client = get_client(url, token, org)
-            ingest_to_influx(data, ticker, client, bucket)
-        except Exception as e:
-            print(f"Error fetching data: {e}")
+    ds_polygon = PolygonIO()
+    try:
+        ticker = "SPY"
+        data = ds_polygon.get_data(ticker, "2022-01-01")
+        DataSourceHelpers.display_ohlc(data,ticker)
+
+        ema = Ema(None, None, 20)
+        ema_data = ema.calculate(data, 20)
+        additional_data = {"20EMA": {"data": ema, "main_pane": True}}
+        plot_ohlc(data, ticker, additional_data)
+        
+        client = get_client(url, token, org)
+        ingest_to_influx(data, ticker, client, bucket)
+    except Exception as e:
+        print(f"Error fetching data: {e}")
