@@ -8,8 +8,19 @@ from tick_database import QuoteFields
 from datetime import datetime, timedelta
 
 class DataSource(ABC):
+    def __init__(self):
+        self._data = None
+    
+    @property
+    def data(self) -> pd.DataFrame:
+        return self._data
+    
+    @data.setter
+    def data(self, value: pd.DataFrame):
+        self._data = value
+    
     @abstractmethod
-    def get_data(self, ticker: str = None, time_start=None, time_stop=None) -> pd.DataFrame:
+    def download_data(self, ticker: str = None, time_start=None, time_stop=None) -> pd.DataFrame:
         pass
     
     def get_ticker_details(self, ticker: str = None):
@@ -17,6 +28,7 @@ class DataSource(ABC):
 
 class Vantage(DataSource):
     def __init__(self, api_key: str = None, output_data_size=None):
+        super().__init__()
         self.api_key = api_key
         self.output_data_size = output_data_size if output_data_size is not None else self.DataOutputSize.Compact
     
@@ -28,7 +40,7 @@ class Vantage(DataSource):
         """Authenticate with Alpha Vantage API"""
         return self.api_key is not None
     
-    def get_data(self, ticker: str = None, time_start=None, time_stop=None) -> pd.DataFrame:
+    def download_data(self, ticker: str = None, time_start=None, time_stop=None) -> pd.DataFrame:
         """Get OHLC data for a stock ticker using Alpha Vantage"""
         ts = TimeSeries(key=self.api_key, output_format='pandas')
         data, meta_data = ts.get_daily(symbol=ticker, outputsize=self.output_data_size)
@@ -48,6 +60,7 @@ class PolygonIO(DataSource):
     # https://polygon-api-client.readthedocs.io/en/latest/
     # NOTE: Polygon calls use POLYGON_API_KEY environment variable by default
     def __init__(self, api_key: str = None):
+        super().__init__()
         # API key injected below for easy use. If not provided, the script will attempt
         # to use the environment variable "POLYGON_API_KEY".
         if api_key is None:
@@ -56,15 +69,18 @@ class PolygonIO(DataSource):
         client = RESTClient(api_key)
         self.client = client
     
-    def get_data(self, ticker: str = None, time_start=None, time_stop=None) -> pd.DataFrame:
+    def download_data(self, ticker: str = None, time_start=None, time_stop=None) -> pd.DataFrame:
         """Get OHLC data for a stock ticker using Polygon.io"""
         if time_stop is None:
             time_stop = datetime.now().strftime("%Y-%m-%d")
         if time_start is None:
             time_start = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d")
-        aggs = self.client.get_aggs(ticker, 1, "day", time_start, time_stop)
-        aggs_df = self._convert_to_pandas_dataframe(aggs)
-        return aggs_df
+        
+        tick_data = self.client.get_aggs(ticker, 1, "day", time_start, time_stop)
+        tick_data_df = self._convert_to_pandas_dataframe(tick_data)
+        self.data = tick_data_df
+        
+        return tick_data_df
     
     def get_ticker_details(self, ticker: str = None):
         """Get ticker details using Polygon.io"""
@@ -118,6 +134,6 @@ class DataSourceHelpers:
 if __name__ == "__main__":
     p = PolygonIO()
     r = p.get_ticker_details("SPY")
-    data = p.get_data("SPY", "2010-01-01")
+    data = p.download_data("SPY", "2010-01-01")
     DataSourceHelpers.display_ohlc(data, "SPY")
     print("DataSources module loaded")
