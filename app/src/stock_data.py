@@ -1,73 +1,8 @@
-import pandas as pd
-import talib
 from datetime import datetime
 import plotly.graph_objects as go
-from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from enum import Enum
 from tick_database import QuoteFields
-from datasources import PolygonIO, DataSourceHelpers, DataSource
-#from database import get_client, tick
-
-@dataclass
-class Subplot(ABC):
-    datasource: DataSource
-    name: str
-    color: str = 'blue'
-    show_on_main: bool = True
-    _data: pd.Series = field(default=None, init=False)
-    
-    def __post_init__(self):
-        assert self.datasource is not None, "datasource parameter is required"
-    
-    @property
-    def data(self) -> pd.Series:
-        if self._data is None:
-            self.calculate()
-        return self._data
-    
-    @data.setter
-    def data(self, value: pd.Series):
-        self._data = value
-    
-    @abstractmethod
-    def calculate(self) -> pd.Series:
-        pass
-
-class MovingAverage(Subplot):
-    class AverageType(Enum):
-        Simple = "sma"
-        Exponential = "ema"
-        
-    def __init__(self, 
-                 datasource: DataSource,
-                 period: int,
-                 name: str = None, 
-                 data_type: QuoteFields = QuoteFields.close,
-                 color: str = 'blue', 
-                 show_on_main: bool = True,
-                 avg_type: AverageType = AverageType.Simple):
-        if name is None:
-            name = f"{avg_type.value}{period}"
-        
-        super().__init__(datasource, name, color, show_on_main)
-        
-        self.period = period
-        self.data_type = data_type
-        self.avg_type = avg_type
-    
-    def calculate(self) -> pd.Series:
-        """Compute moving average for the given data and period"""
-        data = self.datasource.data[self.data_type].values
-        
-        if self.avg_type == self.AverageType.Simple:
-            self.data = pd.Series(talib.SMA(data, timeperiod=self.period))
-        elif self.avg_type == self.AverageType.Exponential:
-            self.data = pd.Series(talib.EMA(data, timeperiod=self.period))
-        else:
-            assert False, f"Invalid avg_type: {self.avg_type}"
-        
-        return self.data
+from datasources import PolygonIO, DataSourceHelpers
+from technical_analysis import MovingAverage
 
 def plot_ohlc(data, ticker, subplots=None):
     """Display OHLC data as a candlestick chart with optional subplot data"""
@@ -131,24 +66,17 @@ def plot_ohlc(data, ticker, subplots=None):
     fig.show()
 
 
-def ingest_to_influx(data, ticker, client, bucket):
-    """Ingest stock data into InfluxDB"""
-    for date, row in data.iterrows():
-        tick(client, bucket, ticker, row['Open'], row['Close'], row['High'], row['Low'], date.strftime('%Y-%m-%d'))
-    print(f"Ingested {len(data)} records for {ticker} into InfluxDB")
-
 if __name__ == "__main__":   
-    # InfluxDB settings
-    url = "http://influxdb:8086"
-    token = "mytoken123"
-    org = "myorg2"
-    bucket = "testing"
-    
     ds_polygon = PolygonIO()
     try:
         ticker = "SPY"
         data = ds_polygon.download_data(ticker, "2022-01-01")
         DataSourceHelpers.display_ohlc(data,ticker)
+        
+        from influx_database import InfluxDatabase
+        db = InfluxDatabase()
+        tags = {"symbol":"spy"}
+        db.write_pandas(dataframe=data,tags=tags)
 
         ema_5 = MovingAverage(ds_polygon, 5)
         ema_50 = MovingAverage(ds_polygon, 50, color='green')
@@ -158,8 +86,6 @@ if __name__ == "__main__":
         ema_200.calculate()
         sub_plots = [ema_5,ema_50,ema_200]
         plot_ohlc(data, ticker, sub_plots)
-        
-        client = get_client(url, token, org)
-        ingest_to_influx(data, ticker, client, bucket)
+
     except Exception as e:
         print(f"Error fetching data: {e}")
