@@ -3,6 +3,8 @@ import plotly.graph_objects as go
 from tick_database import QuoteFields
 from datasources import PolygonIO, DataSourceHelpers
 from technical_analysis import MovingAverage
+from influx_database import InfluxDatabase
+from tags import InstrumentTags
 
 def plot_ohlc(data, ticker, subplots=None):
     """Display OHLC data as a candlestick chart with optional subplot data"""
@@ -21,16 +23,11 @@ def plot_ohlc(data, ticker, subplots=None):
     fig = make_subplots(rows=subplot_count, cols=1, shared_xaxes=True)
     
     # Add main OHLC data
-    fig.add_trace(go.Ohlc(x=formatted_dates,
+    fig.add_trace(go.Candlestick(x=formatted_dates,
                           open=data[QuoteFields.open],
                           high=data[QuoteFields.high],
                           low=data[QuoteFields.low],
-                          close=data[QuoteFields.close],
-                          hovertext=[f'Date: {date}<br>Open: ${row[QuoteFields.open]:.2f}<br>' +
-                                     f'High: ${row[QuoteFields.high]:.2f}<br>' +
-                                     f'Low: ${row[QuoteFields.low]:.2f}<br>' +
-                                     f'Close: ${row[QuoteFields.close]:.2f}'
-                                     for date, (_, row) in zip(formatted_dates, data.iterrows())]), row=1, col=1)
+                          close=data[QuoteFields.close]))
     
     # Add subplot data
     if subplots:
@@ -73,18 +70,17 @@ if __name__ == "__main__":
         data = ds_polygon.download_data(ticker, "2022-01-01")
         DataSourceHelpers.display_ohlc(data,ticker)
         
-        from influx_database import InfluxDatabase
         db = InfluxDatabase()
-        tags = {"symbol":"spy"}
+        tags = InstrumentTags(symbol=ticker)
         db.write_pandas(dataframe=data,tags=tags)
 
-        ema_5 = MovingAverage(ds_polygon, 5)
-        ema_50 = MovingAverage(ds_polygon, 50, color='green')
+        #ema_5 = MovingAverage(ds_polygon, 5)
+        #ema_50 = MovingAverage(ds_polygon, 50, color='green')
         ema_200 = MovingAverage(ds_polygon, 200, color='red')
-        ema_5.calculate()
-        ema_50.calculate()
+        #ema_5.calculate()
+        #ema_50.calculate()
         ema_200.calculate()
-        sub_plots = [ema_5,ema_50,ema_200]
+        sub_plots = [ema_200]
         plot_ohlc(data, ticker, sub_plots)
 
     except Exception as e:

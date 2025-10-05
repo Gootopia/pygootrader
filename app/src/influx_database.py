@@ -7,6 +7,7 @@ import pandas as pd
 import json
 from datetime import datetime, timezone
 from dataclasses import dataclass, field
+from tags import TagCollection
 
 INFLUX_DB_DOCKER_IMAGE = "influxdb:latest"
 class InfluxDatabaseInfo:
@@ -107,44 +108,7 @@ class InfluxDatabase(InfluxDatabaseInfo):
                  org: Optional[str] = None, 
                  url: Optional[str] = None):
         super().__init__(bucket, token, org, url)
-        self.client = self.get_client(self.url, self.token, self.org)
-        
-    def get_client(self, 
-                   url: str, 
-                   token: str, 
-                   org: str) -> InfluxDBClient:
-        """Create InfluxDB client"""
-        db_client = InfluxDBClient(url=url, token=token, org=org)
-        if db_client is not None:
-            logger.info(f"InfluxDB connection success: {url}")
-        else:
-            logger.error(f"InfluxDB connection failure: {url}")
-        return db_client
-    
-    def write_record(self, 
-                     measurement: str, 
-                     tags: Optional[Dict[str, str]] = None, 
-                     fields: Optional[Dict[str, Any]] = None,
-                     timestamp: Optional[Union[str, datetime]] = None) -> None:
-        """Write a record to InfluxDB"""
-        write_api = self.client.write_api(write_options=SYNCHRONOUS)
-        point = Point(measurement)
-
-        if tags:
-            for key, value in tags.items():
-                point.tag(key, value)
-
-        if fields:
-            for key, value in fields.items():
-                point.field(key, value)
-        
-        if timestamp is None:
-            point.time(datetime.now(timezone.utc))
-        else:
-            point.time(timestamp.astimezone(timezone.utc))
-
-        active_bucket = self.active_bucket
-        write_api.write(bucket=active_bucket, record=point)
+        self.client = self._get_client(self.url, self.token, self.org)
     
     def read_records(self, 
                      query: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -165,6 +129,18 @@ class InfluxDatabase(InfluxDatabaseInfo):
         logger.info(f"Query returned {len(records)} records")
         return records
     
+    def convert_to_pandas(self, data: List[Dict[str, Any]]) -> pd.DataFrame:
+        extracted_data = []
+        for record in data:
+            extracted_data.append({
+                '_time': record.get('_time'),
+                '_field': record.get('_field'),
+                '_value': record.get('_value')
+            })
+        df_long = pd.DataFrame(extracted_data)
+        df_wide = df_long.pivot(index='_time', columns='_field', values='_value').reset_index()
+        return df_wide
+    
     def set_active_bucket(self, 
                           bucket: str) -> None:
         """Set the active bucket for database operations"""
@@ -179,15 +155,19 @@ class InfluxDatabase(InfluxDatabaseInfo):
     def write_pandas(self, 
                      dataframe: pd.DataFrame, 
                      fields: Optional[List[str]] = None,
-                     tags: Optional[Dict[str, str]] = None,
+                     tags: Optional[Union[Dict[str, str], TagCollection]] = None,
                      timestamp_key: str = DEFAULT_TIMESTAMP_KEY):
         """Write pandas DataFrame to InfluxDB"""
         assert timestamp_key in dataframe.columns, f"Timestamp key '{timestamp_key}' not found in dataframe columns"
         field_keys = [col for col in dataframe.columns if col != timestamp_key]
+        
+        # Convert TagCollection to dict if needed
+        tags_dict = tags.to_dict() if hasattr(tags, 'to_dict') else tags
+        
         ingestion_info = {
             "rows": len(dataframe),
             "timestamp_key": timestamp_key,
-            "tags": tags,
+            "tags": tags_dict,
             "fields": field_keys
         }
         logger.info(f"Ingesting data: {json.dumps(ingestion_info, indent=2)}")
@@ -195,14 +175,52 @@ class InfluxDatabase(InfluxDatabaseInfo):
         for index, row in dataframe.iterrows():
             timestamp = datetime.fromtimestamp(row[timestamp_key] / 1000)
             field_values = {key: row[key] for key in field_keys}
-            self.write_record("stock_data", tags=tags, fields=field_values, timestamp=timestamp)
+            self._write_record("stock_data", tags=tags_dict, fields=field_values, timestamp=timestamp)
 
         x=1
+    
+    def _get_client(self, 
+                    url: str, 
+                    token: str, 
+                    org: str) -> InfluxDBClient:
+        """Create InfluxDB client"""
+        db_client = InfluxDBClient(url=url, token=token, org=org)
+        if db_client is not None:
+            logger.info(f"InfluxDB connection success: {url}")
+        else:
+            logger.error(f"InfluxDB connection failure: {url}")
+        return db_client
+    
+    def _write_record(self, 
+                      measurement: str, 
+                      tags: Optional[Dict[str, str]] = None, 
+                      fields: Optional[Dict[str, Any]] = None,
+                      timestamp: Optional[Union[str, datetime]] = None) -> None:
+        """Write a record to InfluxDB"""
+        write_api = self.client.write_api(write_options=SYNCHRONOUS)
+        point = Point(measurement)
+
+        if tags:
+            for key, value in tags.items():
+                point.tag(key, value)
+
+        if fields:
+            for key, value in fields.items():
+                point.field(key, value)
+        
+        if timestamp is None:
+            point.time(datetime.now(timezone.utc))
+        else:
+            point.time(timestamp.astimezone(timezone.utc))
+
+        active_bucket = self.active_bucket
+        write_api.write(bucket=active_bucket, record=point)
 
 
 if __name__ == "__main__":
     db = InfluxDatabase()
     query1 = InfluxQuery().range().add_tag("symbol", "spy").build(db)
     data = db.read_records(query1)
-    
+    data_df = db.convert_to_pandas(data)
+    print(data_df)
     print("done")
