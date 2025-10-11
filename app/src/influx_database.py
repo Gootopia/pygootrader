@@ -7,7 +7,8 @@ import pandas as pd
 import json
 from datetime import datetime, timezone
 from dataclasses import dataclass, field
-from tags import TagCollection
+from tags import TagGroup
+from tags import InstrumentTags
 
 INFLUX_DB_DOCKER_IMAGE = "influxdb:latest"
 class InfluxDatabaseInfo:
@@ -74,6 +75,12 @@ class InfluxQuery:
         self._query_tags.append(f'filter(fn: (r) => r["{key}"] == "{value}")')
         return self
     
+    def add_tag_group(self, tag_group: TagGroup):
+        tag_dict = tag_group.to_dict()
+        for key, value in tag_dict.items():
+            self._query_tags.append(f'filter(fn: (r) => r["{key}"] == "{value}")')
+        return self
+    
     def add_field(self, value: str):
         self._query_fields.append(f'filter(fn: (r) => r["_field"] == "{value}")')
         return self
@@ -111,7 +118,8 @@ class InfluxDatabase(InfluxDatabaseInfo):
         self.client = self._get_client(self.url, self.token, self.org)
     
     def read_records(self, 
-                     query: Optional[str] = None) -> List[Dict[str, Any]]:
+                     query: Optional[str] = None,
+                     return_dataframe: bool = True) -> List[Dict[str, Any]]:
         """Read records from InfluxDB using Flux query"""
         if query is None:
             raise ValueError("Query cannot be None")
@@ -127,6 +135,10 @@ class InfluxDatabase(InfluxDatabaseInfo):
                 records.append(record.values)
 
         logger.info(f"Query returned {len(records)} records")
+        if return_dataframe:
+            logger.info("Converting records to Pandas dataframe")
+            records = self.convert_to_pandas(records)
+        
         return records
     
     def convert_to_pandas(self, data: List[Dict[str, Any]]) -> pd.DataFrame:
@@ -155,13 +167,13 @@ class InfluxDatabase(InfluxDatabaseInfo):
     def write_pandas(self, 
                      dataframe: pd.DataFrame, 
                      fields: Optional[List[str]] = None,
-                     tags: Optional[Union[Dict[str, str], TagCollection]] = None,
+                     tags: Optional[Union[Dict[str, str], TagGroup]] = None,
                      timestamp_key: str = DEFAULT_TIMESTAMP_KEY):
         """Write pandas DataFrame to InfluxDB"""
         assert timestamp_key in dataframe.columns, f"Timestamp key '{timestamp_key}' not found in dataframe columns"
         field_keys = [col for col in dataframe.columns if col != timestamp_key]
         
-        # Convert TagCollection to dict if needed
+        # Convert TagGroup to dict if needed
         tags_dict = tags.to_dict() if hasattr(tags, 'to_dict') else tags
         
         ingestion_info = {
@@ -220,7 +232,8 @@ class InfluxDatabase(InfluxDatabaseInfo):
 if __name__ == "__main__":
     db = InfluxDatabase()
     query1 = InfluxQuery().range().add_tag("symbol", "spy").build(db)
-    data = db.read_records(query1)
-    data_df = db.convert_to_pandas(data)
+    tags = InstrumentTags(symbol="spy")
+    query2 = InfluxQuery().range().add_tag_group(tags).build(db)  
+    data_df = db.read_records(query1)
     print(data_df)
     print("done")

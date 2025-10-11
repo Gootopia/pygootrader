@@ -9,7 +9,7 @@ class QuoteFields(str, Enum):
     high = "high"
     low = "low"
     volume = "volume"
-    date = "date"
+    time = "_time"  # underscore is required due to InfluxDB
 
 
 class TickDatabase(InfluxDatabase):

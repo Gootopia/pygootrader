@@ -2,35 +2,31 @@ import pandas as pd
 import talib
 from dataclasses import dataclass
 from enum import Enum
+from abc import ABC, abstractmethod
 from tick_database import QuoteFields
-from datasources import DataSource
-from charts import DataPlot
 
-class MovingAverage(DataPlot):
+class Indicator(ABC):
+    @abstractmethod
+    def calculate(self, df: pd.DataFrame = None) -> pd.Series:
+        pass
+
+@dataclass
+class MovingAverage(Indicator):
     class AverageType(Enum):
         Simple = "sma"
         Exponential = "ema"
-        
-    def __init__(self, 
-                 datasource: DataSource,
-                 period: int,
-                 name: str = None, 
-                 data_type: QuoteFields = QuoteFields.close,
-                 color: str = 'blue', 
-                 show_on_main: bool = True,
-                 avg_type: AverageType = AverageType.Simple):
-        if name is None:
-            name = f"{avg_type.value}{period}"
-        
-        super().__init__(datasource, name, color, show_on_main)
-        
-        self.period = period
-        self.data_type = data_type
-        self.avg_type = avg_type
     
-    def calculate(self) -> pd.Series:
+    period: int
+    data_type: QuoteFields = QuoteFields.close
+    avg_type: 'MovingAverage.AverageType' = None
+    
+    def __post_init__(self):
+        if self.avg_type is None:
+            self.avg_type = self.AverageType.Simple
+    
+    def calculate(self, df: pd.DataFrame = None) -> pd.Series:
         """Compute moving average for the given data and period"""
-        data = self.datasource.data[self.data_type].values
+        data = df[self.data_type.value].values
         
         if self.avg_type == self.AverageType.Simple:
             self.data = pd.Series(talib.SMA(data, timeperiod=self.period))
@@ -41,34 +37,33 @@ class MovingAverage(DataPlot):
         
         return self.data
 
-class GooEmaDelta(DataPlot): 
-    def __init__(self, 
-                 datasource: DataSource,
-                 ema_short: int,
-                 ema_long: int,
-                 period: int,
-                 name: str = None, 
-                 data_type: QuoteFields = QuoteFields.close,
-                 color: str = 'blue', 
-                 show_on_main: bool = True):
-        if name is None:
-            name = f"goo_ema_delta_{ema_short}_{ema_long}_{period}"
-        
-        super().__init__(datasource, name, color, show_on_main)
-        
-        self.ema_short = ema_short
-        self.ema_long = ema_long
-        self.period = period
-        self.data_type = data_type
-    
-    def calculate(self) -> pd.Series:
-        """Compute moving average for the given data and period"""
-        data = self.datasource.data[self.data_type].values
-        
-        ema_short = talib.EMA(data, timeperiod=self.ema_short)
-        ema_long = talib.EMA(data, timeperiod=self.ema_long)
-
-        delta = ema_short - ema_long
-        trend = talib.SMA(delta, timeperiod=self.period)
-        
-        return self.trend
+# class GooEmaDelta(DataPlot): 
+#     def __init__(self, 
+#                  ema_short: int,
+#                  ema_long: int,
+#                  period: int,
+#                  name: str = None, 
+#                  data_type: QuoteFields = QuoteFields.close,
+#                  color: str = 'blue', 
+#                  show_on_main: bool = True):
+#         if name is None:
+#             name = f"goo_ema_delta_{ema_short}_{ema_long}_{period}"
+#         
+#         super().__init__(name, color, show_on_main)
+#         
+#         self.ema_short = ema_short
+#         self.ema_long = ema_long
+#         self.period = period
+#         self.data_type = data_type
+#     
+#     def calculate(self) -> pd.Series:
+#         """Compute moving average for the given data and period"""
+#         data = self.datasource.data[self.data_type].values
+#         
+#         ema_short = talib.EMA(data, timeperiod=self.ema_short)
+#         ema_long = talib.EMA(data, timeperiod=self.ema_long)
+# 
+#         delta = ema_short - ema_long
+#         trend = talib.SMA(delta, timeperiod=self.period)
+#         
+#         return self.trend
