@@ -2,7 +2,7 @@ from datasources import PolygonIO, DataSourceHelpers
 from technical_analysis import MovingAverage
 from influx_database import InfluxDatabase, InfluxQuery
 from tags import InstrumentTags
-from charts import Chart
+from charts import Chart, PlotAttribute
 
 
 if __name__ == "__main__":   
@@ -16,14 +16,20 @@ if __name__ == "__main__":
         tags = InstrumentTags(symbol=ticker)
         #db.write_pandas(dataframe=data,tags=tags)
 
-        tags = InstrumentTags(symbol="spy")
-        query = InfluxQuery().range().add_tag_group(tags).build(db)
+        tags_spy = InstrumentTags(symbol="spy")
+        query = InfluxQuery().range().add_tag_group(tags_spy).build(db)
         data_df = db.read_records(query)
         ema_200 = MovingAverage(200).calculate(data_df)
-        chart = Chart("SPY Stock Chart").data(data_df)
+        ema_50 = MovingAverage(50).calculate(data_df)
+        ema_5 = MovingAverage(5).calculate(data_df)
+        ema_200_attr = PlotAttribute(color='blue', linewidth=3)
+        ema_50_attr = PlotAttribute(color='magenta', linewidth=3)
+        ema_5_attr = PlotAttribute(color='yellow', linewidth=3)
+        chart = Chart(tags_spy).data(data_df)
+        chart.add_sub_plot(ema_200, name="200 EMA", pane_index=0, plot_attribute=ema_200_attr)
+        chart.add_sub_plot(ema_50, name="50 EMA", pane_index=0, plot_attribute=ema_50_attr)
+        chart.add_sub_plot(ema_5, name="5 EMA", pane_index=0, plot_attribute=ema_5_attr)
         chart.show()
-
-
 
     except Exception as e:
         print(f"Error fetching data: {e}")

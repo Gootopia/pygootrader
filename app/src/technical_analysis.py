@@ -1,11 +1,17 @@
 import pandas as pd
 import talib
+import numpy as np
 from dataclasses import dataclass
 from enum import Enum
 from abc import ABC, abstractmethod
 from tick_database import QuoteFields
 
 class Indicator(ABC):
+    @classmethod
+    def convert_data(cls, df: pd.DataFrame, column_key: str) -> np.ndarray:
+        data = np.array(df[column_key].values, dtype=np.float64)
+        return data
+    
     @abstractmethod
     def calculate(self, df: pd.DataFrame = None) -> pd.Series:
         pass
@@ -17,7 +23,7 @@ class MovingAverage(Indicator):
         Exponential = "ema"
     
     period: int
-    data_type: QuoteFields = QuoteFields.close
+    quote_type: QuoteFields = QuoteFields.close
     avg_type: 'MovingAverage.AverageType' = None
     
     def __post_init__(self):
@@ -26,16 +32,16 @@ class MovingAverage(Indicator):
     
     def calculate(self, df: pd.DataFrame = None) -> pd.Series:
         """Compute moving average for the given data and period"""
-        data = df[self.data_type.value].values
+        data = self.convert_data(df, self.quote_type.value)
         
         if self.avg_type == self.AverageType.Simple:
-            self.data = pd.Series(talib.SMA(data, timeperiod=self.period))
+            result = pd.Series(talib.SMA(data, timeperiod=self.period))
         elif self.avg_type == self.AverageType.Exponential:
-            self.data = pd.Series(talib.EMA(data, timeperiod=self.period))
+            result = pd.Series(talib.EMA(data, timeperiod=self.period))
         else:
             assert False, f"Invalid avg_type: {self.avg_type}"
-        
-        return self.data
+        self.data = result
+        return result
 
 # class GooEmaDelta(DataPlot): 
 #     def __init__(self, 
