@@ -9,6 +9,7 @@ import pandas as pd
 import talib
 
 # Custom packages
+from charts import Colormap
 from tick_database import QuoteFields
 
 class Indicator(ABC):
@@ -49,7 +50,7 @@ class MovingAverage(Indicator):
         return result
 
 @dataclass
-class GooEmaDelta(Indicator):
+class GooEmaDelta(Indicator, Colormap):
     ema_short: int
     ema_long: int
     period: int
@@ -66,3 +67,16 @@ class GooEmaDelta(Indicator):
         result = pd.Series(talib.SMA(delta, timeperiod=self.period))
         
         return result
+    
+    def map_value_to_color(self, values: list, dataframe: pd.DataFrame = None) -> list:
+        colors = []
+        for i, current_value in enumerate(values):
+            if i == 0:
+                colors.append('gray')
+            elif current_value > values[i-1]:
+                colors.append('green')
+            elif current_value < values[i-1]:
+                colors.append('red')
+            else:
+                colors.append('gray')
+        return colors

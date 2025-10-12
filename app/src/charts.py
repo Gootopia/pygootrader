@@ -1,4 +1,5 @@
 # Built-in packages
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
@@ -13,20 +14,10 @@ from plotly.subplots import make_subplots
 from tags import InstrumentTags
 from tick_database import QuoteFields
 
-class Colormap:
+class Colormap(ABC):
+    @abstractmethod
     def map_value_to_color(self, values: list, dataframe: pd.DataFrame = None) -> list:
-        colors = []
-                
-        # Original list handling
-        for current_value in values:
-            if current_value > 0:
-                colors.append('green')
-            elif current_value < 0:
-                colors.append('red')
-            else:
-                colors.append('gray')
-        
-        return colors
+        pass
 
 @dataclass
 class PlotAttribute:
@@ -70,14 +61,26 @@ class Chart:
         return self
     
     def add_sub_plot(self, 
-                     data: pd.Series, 
+                     data, 
                      pane_index: int = 0, 
                      name: str = None, 
-                     plot_attribute: PlotAttribute = None,
-                     color_map: Colormap = None):
+                     plot_attribute: PlotAttribute = None):
+        # Call calculate method if it exists
+        if hasattr(data, 'calculate'):
+            calculated_data = data.calculate(self.main_data)
+        else:
+            assert False, "Data object must have a calculate method"
+            
         if name is None:
-            name = data.name if data.name is not None else "Series"
-        self.sub_panes.append({"data": data, "name": name, "pane_index": pane_index, "plot_attribute": plot_attribute, "color_map": color_map})
+            name = calculated_data.name if hasattr(calculated_data, 'name') and calculated_data.name is not None else "Series"
+        
+        # Check if data object is derived from Colormap and add color_map
+        color_map = None
+        if isinstance(data, Colormap):
+            values = calculated_data.tolist()
+            color_map = data.map_value_to_color(values, self.main_data)
+            
+        self.sub_panes.append({"data": calculated_data, "name": name, "pane_index": pane_index, "plot_attribute": plot_attribute, "data_object": data, "color_map": color_map})
         return self
     
     def show(self, scale_sub_pane: float = 0.33):
@@ -86,6 +89,7 @@ class Chart:
         NAME_KEY = "name"
         PANE_INDEX_KEY = "pane_index"
         PLOT_ATTRIBUTE_KEY = "plot_attribute"
+        DATA_OBJECT_KEY = "data_object"
         COLOR_MAP_KEY = "color_map"
         max_pane_index = max([sp[PANE_INDEX_KEY] for sp in self.sub_panes], default=0)
         subplot_count = max(1, max_pane_index + 1)
@@ -121,30 +125,27 @@ class Chart:
             ), row=1, col=1)
         
         # Add sub-plots
-        for sub_pane in self.sub_panes:
-            row_index = 1 if sub_pane[PANE_INDEX_KEY] == 0 else sub_pane[PANE_INDEX_KEY] + 1
+        for sub_pane_dict in self.sub_panes:
+            row_index = 1 if sub_pane_dict[PANE_INDEX_KEY] == 0 else sub_pane_dict[PANE_INDEX_KEY] + 1
             
             # Check if this should be a histogram
-            is_histogram = (sub_pane[PLOT_ATTRIBUTE_KEY] is not None and 
-                           sub_pane[PLOT_ATTRIBUTE_KEY].line_style == PlotAttribute.LineStyle.Histogram)
+            is_histogram = (sub_pane_dict[PLOT_ATTRIBUTE_KEY] is not None and 
+                           sub_pane_dict[PLOT_ATTRIBUTE_KEY].line_style == PlotAttribute.LineStyle.Histogram)
             
             # Generate colors using colormap if provided
-            colors = None
-            if sub_pane[COLOR_MAP_KEY] is not None:
-                values = sub_pane[DATA_KEY].tolist()
-                colors = sub_pane[COLOR_MAP_KEY].map_value_to_color(values, self.main_data)
+            colors = sub_pane_dict[COLOR_MAP_KEY] if sub_pane_dict[COLOR_MAP_KEY] is not None else None
             
             if is_histogram:
                 marker_dict = {}
                 if colors is not None:
                     marker_dict['color'] = colors
-                elif sub_pane[PLOT_ATTRIBUTE_KEY] and sub_pane[PLOT_ATTRIBUTE_KEY].color is not None:
-                    marker_dict['color'] = sub_pane[PLOT_ATTRIBUTE_KEY].color
+                elif sub_pane_dict[PLOT_ATTRIBUTE_KEY] and sub_pane_dict[PLOT_ATTRIBUTE_KEY].color is not None:
+                    marker_dict['color'] = sub_pane_dict[PLOT_ATTRIBUTE_KEY].color
                 
                 self.fig.add_trace(go.Bar(
                     x=self.main_data[self.timestamp_col],
-                    y=sub_pane[DATA_KEY],
-                    name=sub_pane[NAME_KEY] if sub_pane[NAME_KEY] else "Series",
+                    y=sub_pane_dict[DATA_KEY],
+                    name=sub_pane_dict[NAME_KEY] if sub_pane_dict[NAME_KEY] else "Series",
                     marker=marker_dict if marker_dict else None
                 ), row=row_index, col=1)
             else:
@@ -153,16 +154,16 @@ class Chart:
                 
                 if colors is not None:
                     marker_dict['color'] = colors
-                elif sub_pane[PLOT_ATTRIBUTE_KEY] is not None:
-                    if sub_pane[PLOT_ATTRIBUTE_KEY].color is not None:
-                        line_dict['color'] = sub_pane[PLOT_ATTRIBUTE_KEY].color
-                    if sub_pane[PLOT_ATTRIBUTE_KEY].linewidth is not None:
-                        line_dict['width'] = sub_pane[PLOT_ATTRIBUTE_KEY].linewidth
+                elif sub_pane_dict[PLOT_ATTRIBUTE_KEY] is not None:
+                    if sub_pane_dict[PLOT_ATTRIBUTE_KEY].color is not None:
+                        line_dict['color'] = sub_pane_dict[PLOT_ATTRIBUTE_KEY].color
+                    if sub_pane_dict[PLOT_ATTRIBUTE_KEY].linewidth is not None:
+                        line_dict['width'] = sub_pane_dict[PLOT_ATTRIBUTE_KEY].linewidth
                 
                 self.fig.add_trace(go.Scatter(
                     x=self.main_data[self.timestamp_col],
-                    y=sub_pane[DATA_KEY],
-                    name=sub_pane[NAME_KEY] if sub_pane[NAME_KEY] else "Series",
+                    y=sub_pane_dict[DATA_KEY],
+                    name=sub_pane_dict[NAME_KEY] if sub_pane_dict[NAME_KEY] else "Series",
                     mode='lines' if not colors else 'markers',
                     line=line_dict if line_dict else None,
                     marker=marker_dict if marker_dict else None
