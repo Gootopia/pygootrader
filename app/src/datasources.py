@@ -1,11 +1,16 @@
+# Built-in packages
+import os
+from abc import ABC, abstractmethod
+from datetime import datetime, timedelta
+from enum import Enum
+
+# Third-party packages
+import pandas as pd
 from alpha_vantage.timeseries import TimeSeries
 from polygon import RESTClient
-import pandas as pd
-import os
-from enum import Enum
-from abc import ABC, abstractmethod
+
+# Custom packages
 from tick_database import QuoteFields
-from datetime import datetime, timedelta
 
 class DataSource(ABC):
     def __init__(self):

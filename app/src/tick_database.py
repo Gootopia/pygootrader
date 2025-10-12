@@ -1,7 +1,12 @@
+# Built-in packages
+from enum import Enum
+
+# Third-party packages
 from influxdb_client import Point
 from influxdb_client.client.write_api import SYNCHRONOUS
+
+# Custom packages
 from influx_database import InfluxDatabase
-from enum import Enum
 
 class QuoteFields(str, Enum):
     open = "open"

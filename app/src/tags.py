@@ -1,5 +1,6 @@
-from enum import Enum
+# Built-in packages
 from dataclasses import dataclass
+from enum import Enum
 
 
 class TagGroup:

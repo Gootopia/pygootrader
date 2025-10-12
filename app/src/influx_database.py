@@ -1,14 +1,18 @@
+# Built-in packages
+import json
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Dict, List, Optional, Any, Union
+
+# Third-party packages
+import pandas as pd
 from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.write_api import SYNCHRONOUS
-from typing import Dict, List, Optional, Any, Union
-from docker_helper import DockerHelper
 from loguru import logger
-import pandas as pd
-import json
-from datetime import datetime, timezone
-from dataclasses import dataclass, field
-from tags import TagGroup
-from tags import InstrumentTags
+
+# Custom packages
+from docker_helper import DockerHelper
+from tags import TagGroup, InstrumentTags
 
 INFLUX_DB_DOCKER_IMAGE = "influxdb:latest"
 class InfluxDatabaseInfo:
