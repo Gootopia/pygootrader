@@ -14,7 +14,8 @@ class QuoteFields(str, Enum):
     high = "high"
     low = "low"
     volume = "volume"
-    time = "_time"  # underscore is required due to InfluxDB
+    time_influx = "_time"  # underscore is required due to InfluxDB
+    time_polygon = "timestamp"  # used by PolygonIO datasource
 
 
 class TickDatabase(InfluxDatabase):

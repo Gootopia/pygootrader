@@ -17,14 +17,15 @@ if __name__ == "__main__":
         tags = InstrumentTags(symbol=ticker)
         #db.write_pandas(dataframe=data,tags=tags)
 
-        tags_spy = InstrumentTags(symbol="spy")
+        tags_spy = InstrumentTags(symbol="schb")
         query = InfluxQuery().range().add_tag_group(tags_spy).build(db)
         data_df = db.read_records(query)
         
-        ema_200 = MovingAverage(200).calculate(data_df)
-        ema_50 = MovingAverage(50).calculate(data_df)
-        ema_5 = MovingAverage(5).calculate(data_df)
+        ema_200 = MovingAverage(200)
+        ema_50 = MovingAverage(50)
+        ema_5 = MovingAverage(5)
         goo_emad_5_50 = GooEmaDelta(ema_short=5, ema_long=50, period=10)
+        goo_emad_50_200 = GooEmaDelta(ema_short=50, ema_long=200, period=5)
                
         ema_200_attr = PlotAttribute(color='blue', linewidth=3)
         ema_50_attr = PlotAttribute(color='magenta', linewidth=3)
@@ -33,11 +34,11 @@ if __name__ == "__main__":
 
         chart = Chart(tags_spy).data(data_df)
         
-        #chart.add_sub_plot(ema_200, name="200 EMA", pane_index=0, plot_attribute=ema_200_attr)
-        #chart.add_sub_plot(ema_50, name="50 EMA", pane_index=0, plot_attribute=ema_50_attr)
-        #chart.add_sub_plot(ema_5, name="5 EMA", pane_index=0, plot_attribute=ema_5_attr)
+        chart.add_sub_plot(ema_200, name="200 EMA", pane_index=0, plot_attribute=ema_200_attr)
+        chart.add_sub_plot(ema_50, name="50 EMA", pane_index=0, plot_attribute=ema_50_attr)
+        chart.add_sub_plot(ema_5, name="5 EMA", pane_index=0, plot_attribute=ema_5_attr)
         chart.add_sub_plot(goo_emad_5_50, name="GooEmaDelta 5-50", pane_index=1, plot_attribute=goo_emad_attr)
-        
+        chart.add_sub_plot(goo_emad_50_200, name="GooEmaDelta 50-200", pane_index=2, plot_attribute=goo_emad_attr)      
         chart.show()
 
     except Exception as e:

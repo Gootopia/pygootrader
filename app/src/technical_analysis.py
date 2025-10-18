@@ -2,6 +2,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
+from functools import wraps
 
 # Third-party packages
 import numpy as np
@@ -11,6 +12,14 @@ import talib
 # Custom packages
 from charts import Colormap
 from tick_database import QuoteFields
+
+def validate_dataframe(func):
+    @wraps(func)
+    def wrapper(self, df=None, *args, **kwargs):
+        assert df is not None, "DataFrame parameter cannot be None"
+        assert not df.empty, "DataFrame parameter cannot be empty"
+        return func(self, df, *args, **kwargs)
+    return wrapper
 
 class Indicator(ABC):
     @classmethod
@@ -36,6 +45,7 @@ class MovingAverage(Indicator):
         if self.avg_type is None:
             self.avg_type = self.AverageType.Simple
     
+    @validate_dataframe
     def calculate(self, df: pd.DataFrame = None) -> pd.Series:
         """Compute moving average for the given data and period"""
         data = self.convert_data(df, self.quote_type.value)
@@ -56,6 +66,7 @@ class GooEmaDelta(Indicator, Colormap):
     period: int
     quote_type: QuoteFields = QuoteFields.close
     
+    @validate_dataframe
     def calculate(self, df: pd.DataFrame = None) -> pd.Series:
         """Compute EMA delta trend for the given data and parameters"""
         data = self.convert_data(df, self.quote_type.value)

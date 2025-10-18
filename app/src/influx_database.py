@@ -2,6 +2,7 @@
 import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from enum import Enum
 from typing import Dict, List, Optional, Any, Union
 
 # Third-party packages
@@ -15,6 +16,11 @@ from docker_helper import DockerHelper
 from tags import TagGroup, InstrumentTags
 
 INFLUX_DB_DOCKER_IMAGE = "influxdb:latest"
+
+class Attribute(str, Enum):
+    Measurements = "measurements"
+    Fields = "fieldKeys"
+    Tags = "tagKeys"
 class InfluxDatabaseInfo:
     class EnvironmentVariables:
         Bucket = "DOCKER_INFLUXDB_INIT_BUCKET"
@@ -123,7 +129,7 @@ class InfluxDatabase(InfluxDatabaseInfo):
     
     def read_records(self, 
                      query: Optional[str] = None,
-                     return_dataframe: bool = True) -> List[Dict[str, Any]]:
+                     return_dataframe: bool = True) -> Union[List[Dict[str, Any]], pd.DataFrame]:
         """Read records from InfluxDB using Flux query"""
         if query is None:
             raise ValueError("Query cannot be None")
@@ -139,9 +145,10 @@ class InfluxDatabase(InfluxDatabaseInfo):
                 records.append(record.values)
 
         logger.info(f"Query returned {len(records)} records")
-        if return_dataframe:
+        if return_dataframe and len(records) > 0:
             logger.info("Converting records to Pandas dataframe")
-            records = self.convert_to_pandas(records)
+            records_df = self.convert_to_pandas(records)
+            return records_df
         
         return records
     
@@ -172,7 +179,7 @@ class InfluxDatabase(InfluxDatabaseInfo):
                      dataframe: pd.DataFrame, 
                      fields: Optional[List[str]] = None,
                      tags: Optional[Union[Dict[str, str], TagGroup]] = None,
-                     timestamp_key: str = DEFAULT_TIMESTAMP_KEY):
+                     timestamp_key: str = DEFAULT_TIMESTAMP_KEY) -> int:
         """Write pandas DataFrame to InfluxDB"""
         assert timestamp_key in dataframe.columns, f"Timestamp key '{timestamp_key}' not found in dataframe columns"
         field_keys = [col for col in dataframe.columns if col != timestamp_key]
@@ -188,12 +195,63 @@ class InfluxDatabase(InfluxDatabaseInfo):
         }
         logger.info(f"Ingesting data: {json.dumps(ingestion_info, indent=2)}")
         
+        records_written = 0
         for index, row in dataframe.iterrows():
             timestamp = datetime.fromtimestamp(row[timestamp_key] / 1000)
             field_values = {key: row[key] for key in field_keys}
             self._write_record("stock_data", tags=tags_dict, fields=field_values, timestamp=timestamp)
-
-        x=1
+            records_written += 1
+        
+        logger.info(f"Successfully wrote {records_written} records to InfluxDB")
+        return records_written
+    
+    def get_connection_status(self) -> bool:
+        """Check if InfluxDB is accessible"""
+        logger.info("Checking InfluxDB connection status")
+        is_db_connected = False
+        
+        try:
+            ping_result = self.client.ping()
+            is_db_connected = ping_result is not None
+        except Exception:
+            logger.exception("InfluxDB connection check failed")
+        
+        logger.info(f"InfluxDB connection status: {'Connected' if is_db_connected else 'Disconnected'}")
+        
+        return is_db_connected
+    
+    def get_attributes(self, bucket: str, attribute_type: Attribute) -> List[str]:
+        """Get database attributes (measurements, fields, or tags) from the specified bucket"""
+        query = f'import "influxdata/influxdb/schema"\nschema.{attribute_type.value}(bucket: "{bucket}")'
+        query_api = self.client.query_api()
+        result = query_api.query(query=query)
+        
+        attributes = []
+        for table in result:
+            for record in table.records:
+                attributes.append(record.get_value())
+        
+        return attributes
+    
+    def get_tag_values(self, bucket: str, tag_name: str) -> List[str]:
+        """Get all values for a specific tag from the specified bucket"""
+        assert self._check_tag_exist(bucket, tag_name), f"Tag '{tag_name}' does not exist in bucket '{bucket}'"
+        
+        query = f'import "influxdata/influxdb/schema"\nschema.tagValues(bucket: "{bucket}", tag: "{tag_name}")'
+        query_api = self.client.query_api()
+        result = query_api.query(query=query)
+        
+        tag_values = []
+        for table in result:
+            for record in table.records:
+                tag_values.append(record.get_value())
+        
+        return tag_values
+    
+    def _check_tag_exist(self, bucket: str, tag_name: str) -> bool:
+        """Check if a tag exists in the specified bucket"""
+        tags = self.get_attributes(bucket, Attribute.Tags)
+        return tag_name in tags
     
     def _get_client(self, 
                     url: str, 
@@ -235,6 +293,9 @@ class InfluxDatabase(InfluxDatabaseInfo):
 
 if __name__ == "__main__":
     db = InfluxDatabase()
+    m = db.get_attributes(db.active_bucket, Attribute.Measurements)
+    f = db.get_attributes(db.active_bucket, Attribute.Fields)
+    t = db.get_attributes(db.active_bucket, Attribute.Tags)
     query1 = InfluxQuery().range().add_tag("symbol", "spy").build(db)
     tags = InstrumentTags(symbol="spy")
     query2 = InfluxQuery().range().add_tag_group(tags).build(db)  

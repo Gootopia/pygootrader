@@ -51,7 +51,7 @@ class Chart:
     
     def data(self, 
              data: pd.DataFrame, 
-             timestamp_col: str = QuoteFields.time.value):
+             timestamp_col: str = QuoteFields.time_influx.value):
         self.main_data = data
         self.timestamp_col = timestamp_col
         return self
@@ -89,7 +89,6 @@ class Chart:
         NAME_KEY = "name"
         PANE_INDEX_KEY = "pane_index"
         PLOT_ATTRIBUTE_KEY = "plot_attribute"
-        DATA_OBJECT_KEY = "data_object"
         COLOR_MAP_KEY = "color_map"
         max_pane_index = max([sp[PANE_INDEX_KEY] for sp in self.sub_panes], default=0)
         subplot_count = max(1, max_pane_index + 1)
