@@ -1,6 +1,7 @@
 # Built-in packages
 from pathlib import Path
-from typing import List
+from typing import Dict
+import re
 
 # Third-party packages
 import pandas as pd
@@ -9,12 +10,21 @@ from loguru import logger
 DEFAULT_DATA_FOLDER = Path(__file__).parent.parent.parent / "quote_data"
 
 class TosQuoteParser:
-    def get_data_files(self, data_folder: Path) -> List[Path]:
-        """Get all files in the specified data folder"""
+    def get_data_files(self, data_folder: Path) -> Dict[str, Path]:
+        """Get files matching StrategyReports_ticker_101825 format"""
         assert data_folder.exists(), f"Data folder does not exist: {data_folder}"
         
-        file_list = list(data_folder.iterdir())
-        return file_list
+        pattern = r"StrategyReports_([A-Z]{3,4})_\d+"
+        ticker_files = {}
+        
+        for file_path in data_folder.iterdir():
+            if file_path.is_file():
+                match = re.match(pattern, file_path.stem)
+                if match:
+                    ticker = match.group(1)
+                    ticker_files[ticker] = file_path
+        
+        return ticker_files
     
     def convert_tos_strategy_report(self, file_path: Path) -> None:
         """Convert TOS strategy report file to pandas DataFrame"""
@@ -49,11 +59,13 @@ class TosQuoteParser:
                             current_date = date_str
         
         df = pd.DataFrame(data, columns=['date', 'open', 'high', 'low', 'close'])
-        logger.info(f"Created DataFrame with {len(df)} rows")
+        start_date = df['date'].iloc[0] if len(df) > 0 else 'N/A'
+        finish_date = df['date'].iloc[-1] if len(df) > 0 else 'N/A'
+        logger.info(f"Created DataFrame with {len(df)} rows from {start_date} to {finish_date}")
 
 if __name__ == "__main__":
     parser = TosQuoteParser()
-    files = parser.get_data_files(DEFAULT_DATA_FOLDER)
-    for file in files:
-        if file.suffix == '.csv':
-            parser.convert_tos_strategy_report(file)
+    ticker_files = parser.get_data_files(DEFAULT_DATA_FOLDER)
+    for ticker, file_path in ticker_files.items():
+        if file_path.suffix == '.csv':
+            parser.convert_tos_strategy_report(file_path)
