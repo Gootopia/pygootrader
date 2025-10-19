@@ -9,4 +9,4 @@ def test(c):
 
 
 if __name__ == "__main__":
-    print("Pooka Izzy Whiskey Pinky Wiley Daisy Dune Monkey Zander Goonior = AWWWWSOME!!!!")
+    print("Invoke is Awesome!!!!")
