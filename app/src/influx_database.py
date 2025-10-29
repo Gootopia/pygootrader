@@ -46,14 +46,17 @@ class InfluxDatabaseInfo:
         # Variables are pulled from running container as it is assumed that only one instance should be needed
         if bucket is None:
             self.active_bucket = DockerHelper.get_container_env_var("influxdb", self.EnvironmentVariables.Bucket)
+            logger.info(f"Read environment variable {self.EnvironmentVariables.Bucket}: {self.active_bucket}")
         else:
             self.active_bucket = bucket
 
         if org is None:
             self.org = DockerHelper.get_container_env_var("influxdb", self.EnvironmentVariables.Org)
+            logger.info(f"Read environment variable {self.EnvironmentVariables.Org}: {self.org}")
 
         if token is None:
             self.token = DockerHelper.get_container_env_var("influxdb", self.EnvironmentVariables.Token)
+            logger.info(f"Read environment variable {self.EnvironmentVariables.Token}")
 
         self.url = url if url is not None else self.LOCALHOST_URL
 
@@ -134,10 +137,7 @@ class InfluxDatabase(InfluxDatabaseInfo):
         if query is None:
             raise ValueError("Query cannot be None")
         
-        formatted_query = query.replace(' |> ', '\n |> ')
-        logger.info(f"Executing query:\n{formatted_query}")
-        query_api = self.client.query_api()
-        result = query_api.query(query=query)
+        result = self.run_query(query)
 
         records = []
         for table in result:
@@ -205,6 +205,24 @@ class InfluxDatabase(InfluxDatabaseInfo):
         logger.info(f"Successfully wrote {records_written} records to InfluxDB")
         return records_written
     
+    def run_query(self, query: str) -> Union[List, Any]:
+        """Execute a query and return the result"""
+        from influxdb_client.rest import ApiException
+        
+        formatted_query = query.replace(' |> ', '\n |> ')
+        logger.info(f"Running query:\n\033[35m{formatted_query}\033[0m")
+        result = []
+        try:
+            query_api = self.client.query_api()
+            result = query_api.query(query=query)
+        except ApiException as e:
+            if e.status == 404 and "could not find bucket" in str(e.body):
+                logger.error(f"Bucket not found: {e.body}")
+            else:
+                raise e
+        
+        return result
+    
     def get_connection_status(self) -> bool:
         """Check if InfluxDB is accessible"""
         logger.info("Checking InfluxDB connection status")
@@ -223,8 +241,7 @@ class InfluxDatabase(InfluxDatabaseInfo):
     def get_attributes(self, bucket: str, attribute_type: Attribute) -> List[str]:
         """Get database attributes (measurements, fields, or tags) from the specified bucket"""
         query = f'import "influxdata/influxdb/schema"\nschema.{attribute_type.value}(bucket: "{bucket}")'
-        query_api = self.client.query_api()
-        result = query_api.query(query=query)
+        result = self.run_query(query)
         
         attributes = []
         for table in result:
@@ -238,8 +255,7 @@ class InfluxDatabase(InfluxDatabaseInfo):
         assert self._check_tag_exist(bucket, tag_name), f"Tag '{tag_name}' does not exist in bucket '{bucket}'"
         
         query = f'import "influxdata/influxdb/schema"\nschema.tagValues(bucket: "{bucket}", tag: "{tag_name}")'
-        query_api = self.client.query_api()
-        result = query_api.query(query=query)
+        result = self.run_query(query)
         
         tag_values = []
         for table in result:
