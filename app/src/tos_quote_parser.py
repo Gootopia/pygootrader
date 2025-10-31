@@ -11,7 +11,7 @@ DEFAULT_DATA_FOLDER = Path(__file__).parent.parent.parent / "quote_data"
 
 class TosQuoteParser:
     def get_data_files(self, data_folder: Path) -> Dict[str, Path]:
-        """Get files matching StrategyReports_ticker_101825 format"""
+        """Get files matching StrategyReports_ticker_mmddyy format"""
         assert data_folder.exists(), f"Data folder does not exist: {data_folder}"
         
         pattern = r"StrategyReports_([A-Z]{3,4})_\d+"
@@ -27,7 +27,7 @@ class TosQuoteParser:
         return ticker_files
     
     def correct_year(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Correct year values by subtracting 100 when year increases from previous row"""
+        """Convert year from 2 digit to 4 digit value"""
         if len(df) == 0:
             return df
         
@@ -43,6 +43,24 @@ class TosQuoteParser:
                 break
         
         return df
+    
+    @classmethod
+    def process_folder(cls, folder: Path = DEFAULT_DATA_FOLDER) -> None:
+        """Process all TOS strategy report files in a folder"""
+        logger.info(f"Processing folder: {folder}")
+        parser = TosQuoteParser()
+        ticker_files = parser.get_data_files(folder)
+        
+        if not ticker_files:
+            logger.warning("No ticker files found in the folder")
+            return
+        
+        for ticker, file_path in ticker_files.items():
+            if file_path.suffix == '.csv':
+                logger.info(f"{'='*50}")
+                logger.info(f"🔄 PROCESSING TICKER: {ticker.upper()}")
+                logger.info(f"{'='*50}")
+                parser.convert_tos_strategy_report(file_path)
     
     def convert_tos_strategy_report(self, file_path: Path, generate_csv: bool = True) -> None:
         """Convert TOS strategy report file to pandas DataFrame"""
@@ -89,14 +107,6 @@ class TosQuoteParser:
             output_path = file_path.parent / f"{symbol}.csv"
             adjusted_df.to_csv(output_path, index=False)
             logger.info(f"CSV file generated: {output_path}")
-            
-            output_orig_path = file_path.parent / f"{symbol}_orig.csv"
-            df.to_csv(output_orig_path, index=False)
-            logger.info(f"Original CSV file generated: {output_orig_path}")
 
 if __name__ == "__main__":
-    parser = TosQuoteParser()
-    ticker_files = parser.get_data_files(DEFAULT_DATA_FOLDER)
-    for ticker, file_path in ticker_files.items():
-        if file_path.suffix == '.csv':
-            parser.convert_tos_strategy_report(file_path)
+    TosQuoteParser.process_folder()
