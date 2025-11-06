@@ -9,13 +9,13 @@ from technical_analysis import MovingAverage, GooEmaDelta
 if __name__ == "__main__":   
     try:
         ticker = "SPY"
-        #ds_polygon = PolygonIO()
-        #data = ds_polygon.download_data(ticker, "2022-01-01")
-        #DataSourceHelpers.display_ohlc(data,ticker)
+        ds_polygon = PolygonIO()
+        data = ds_polygon.download_data(ticker, "2022-01-01")
+        DataSourceHelpers.display_ohlc(data,ticker)
         
         db = InfluxDatabase()
         tags = InstrumentTags(symbol=ticker)
-        #db.write_pandas(dataframe=data,tags=tags)
+        db.write_pandas(dataframe=data,tags=tags,timestamp_key=PolygonIO.POLYGON_TIMESTAMP_KEY)
 
         tags_spy = InstrumentTags(symbol="schb")
         query = InfluxQuery().range().add_tag_group(tags_spy).build(db)

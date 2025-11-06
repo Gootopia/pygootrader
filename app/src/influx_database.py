@@ -1,5 +1,6 @@
 # Built-in packages
 import json
+import calendar
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -7,7 +8,8 @@ from typing import Dict, List, Optional, Any, Union
 
 # Third-party packages
 import pandas as pd
-from influxdb_client import InfluxDBClient, Point
+from dateutil import parser
+from influxdb_client import InfluxDBClient, Point, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
 from loguru import logger
 
@@ -16,6 +18,7 @@ from docker_helper import DockerHelper
 from tags import TagGroup, InstrumentTags
 
 INFLUX_DB_DOCKER_IMAGE = "influxdb:latest"
+DEFAULT_PRECISION = WritePrecision.MS
 
 class Attribute(str, Enum):
     Measurements = "measurements"
@@ -119,9 +122,29 @@ class InfluxQuery:
         return query.lower()
 
 
+class DateTimeHelper:
+    @classmethod
+    def get_posix_time(
+        cls,
+        timevalue: Union[str, datetime],
+        precision: WritePrecision = WritePrecision.MS
+    ) -> float:
+        if isinstance(timevalue, str):
+            timevalue = datetime.strptime(timevalue, "%m/%d/%Y")
+        
+        posix_timestamp = calendar.timegm(timevalue.utctimetuple())
+        
+        if precision == WritePrecision.MS:
+            posix_timestamp *= 1000
+        elif precision == WritePrecision.US:
+            posix_timestamp *= 1000000
+        elif precision == WritePrecision.NS:
+            posix_timestamp *= 1000000000
+        
+        return posix_timestamp
+
+
 class InfluxDatabase(InfluxDatabaseInfo):
-    DEFAULT_TIMESTAMP_KEY = "date"
-    
     def __init__(self, 
                  bucket: Optional[str] = None, 
                  token: Optional[str] = None, 
@@ -179,8 +202,10 @@ class InfluxDatabase(InfluxDatabaseInfo):
                      dataframe: pd.DataFrame, 
                      fields: Optional[List[str]] = None,
                      tags: Optional[Union[Dict[str, str], TagGroup]] = None,
-                     timestamp_key: str = DEFAULT_TIMESTAMP_KEY) -> int:
+                     timestamp_key: str = None,
+                     time_precision: WritePrecision = DEFAULT_PRECISION) -> int:
         """Write pandas DataFrame to InfluxDB"""
+        assert timestamp_key is not None, "timestamp_key for time data must be provided to ingest into database"
         assert timestamp_key in dataframe.columns, f"Timestamp key '{timestamp_key}' not found in dataframe columns"
         field_keys = [col for col in dataframe.columns if col != timestamp_key]
         
@@ -194,13 +219,17 @@ class InfluxDatabase(InfluxDatabaseInfo):
             "fields": field_keys
         }
         logger.info(f"Ingesting data: {json.dumps(ingestion_info, indent=2)}")
+        logger.info(f"Time precision: {time_precision}")
         
         records_written = 0
         for index, row in dataframe.iterrows():
-            timestamp = datetime.fromtimestamp(row[timestamp_key] / 1000)
+            timestamp = row[timestamp_key]
+
             field_values = {key: row[key] for key in field_keys}
-            self._write_record("stock_data", tags=tags_dict, fields=field_values, timestamp=timestamp)
+            self._write_record("stock_data", tags=tags_dict, fields=field_values, timestamp=timestamp, time_precision=time_precision)
             records_written += 1
+            if records_written % 100 == 0:
+                logger.info(f"Written {records_written} records")
         
         logger.info(f"Successfully wrote {records_written} records to InfluxDB")
         return records_written
@@ -285,7 +314,8 @@ class InfluxDatabase(InfluxDatabaseInfo):
                       measurement: str, 
                       tags: Optional[Dict[str, str]] = None, 
                       fields: Optional[Dict[str, Any]] = None,
-                      timestamp: Optional[Union[str, datetime]] = None) -> None:
+                      timestamp: Optional[Union[str, datetime]] = None,
+                      time_precision: WritePrecision = DEFAULT_PRECISION) -> None:
         """Write a record to InfluxDB"""
         write_api = self.client.write_api(write_options=SYNCHRONOUS)
         point = Point(measurement)
@@ -297,14 +327,19 @@ class InfluxDatabase(InfluxDatabaseInfo):
         if fields:
             for key, value in fields.items():
                 point.field(key, value)
-        
+
         if timestamp is None:
             point.time(datetime.now(timezone.utc))
         else:
-            point.time(timestamp.astimezone(timezone.utc))
+            if isinstance(timestamp, str):
+                timestamp = datetime.strptime(timestamp, "%m/%d/%Y")
+            
+            #timestamp_utc = timestamp.astimezone(timezone.utc)
+            timestamp_posix = DateTimeHelper.get_posix_time(timestamp, time_precision)
+            point.time(timestamp_posix)
 
         active_bucket = self.active_bucket
-        write_api.write(bucket=active_bucket, record=point)
+        write_api.write(bucket=active_bucket, record=point, write_precision=time_precision)
 
 
 if __name__ == "__main__":

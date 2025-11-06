@@ -72,6 +72,11 @@ class PolygonIO(DataSource):
     # Polygon IO docs:
     # https://polygon-api-client.readthedocs.io/en/latest/
     # NOTE: Polygon calls use POLYGON_API_KEY environment variable by default
+    
+    # timestamp column name for data downloaded from PolygonIo
+    # needed for ingesting data into InfluxDb
+    POLYGON_TIMESTAMP_KEY = "_time"
+    
     def __init__(self, api_key: Optional[str] = None) -> None:
         super().__init__()
         # API key injected below for easy use. If not provided, the script will attempt
