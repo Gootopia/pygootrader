@@ -121,29 +121,6 @@ class InfluxQuery:
                 query += f' |> {field_filter}'
         return query.lower()
 
-
-class DateTimeHelper:
-    @classmethod
-    def get_posix_time(
-        cls,
-        timevalue: Union[str, datetime],
-        precision: WritePrecision = WritePrecision.MS
-    ) -> float:
-        if isinstance(timevalue, str):
-            timevalue = datetime.strptime(timevalue, "%m/%d/%Y")
-        
-        posix_timestamp = calendar.timegm(timevalue.utctimetuple())
-        
-        if precision == WritePrecision.MS:
-            posix_timestamp *= 1000
-        elif precision == WritePrecision.US:
-            posix_timestamp *= 1000000
-        elif precision == WritePrecision.NS:
-            posix_timestamp *= 1000000000
-        
-        return posix_timestamp
-
-
 class InfluxDatabase(InfluxDatabaseInfo):
     def __init__(self, 
                  bucket: Optional[str] = None, 
@@ -333,10 +310,13 @@ class InfluxDatabase(InfluxDatabaseInfo):
         else:
             if isinstance(timestamp, str):
                 timestamp = datetime.strptime(timestamp, "%m/%d/%Y")
+                # Timezone support must be added to enable negative (pre 1/1/1970) epochs
+                timestamp = timestamp.replace(tzinfo=timezone.utc)
             
-            #timestamp_utc = timestamp.astimezone(timezone.utc)
-            timestamp_posix = DateTimeHelper.get_posix_time(timestamp, time_precision)
-            point.time(timestamp_posix)
+            timestamp_utc = timestamp.astimezone(timezone.utc)
+            #timestamp_posix = DateTimeHelper.get_posix_time(timestamp, time_precision)
+            #print(f"Timestamp: {timestamp}, Utc: {timestamp_utc}")
+            point.time(timestamp_utc)
 
         active_bucket = self.active_bucket
         write_api.write(bucket=active_bucket, record=point, write_precision=time_precision)
