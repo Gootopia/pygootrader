@@ -1,9 +1,10 @@
 # Built-in packages
 import os
 from abc import ABC, abstractmethod
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Optional, List, Dict, Any, Union
+import pytz
 
 # Third-party packages
 import pandas as pd
@@ -112,15 +113,21 @@ class PolygonIO(DataSource):
     
     def _convert_to_pandas_dataframe(self, data: List[Any], 
                                     time_column_name: str = QuoteFields.time_influx.value) -> pd.DataFrame:
-        """Convert Polygon.io data to pandas DataFrame"""
+        """Convert Polygon.io data to pandas DataFrame with EST timezone conversion"""
         df_data = []
+        est_tz = pytz.timezone('US/Eastern')
+        
         for item in data:
+            # Convert UTC timestamp to EST
+            utc_dt = datetime.fromtimestamp(item.timestamp / 1000, tz=timezone.utc)
+            est_dt = utc_dt.astimezone(est_tz)
+            
             df_data.append({
                 QuoteFields.open.value: item.open,
                 QuoteFields.close.value: item.close,
                 QuoteFields.high.value: item.high,
                 QuoteFields.low.value: item.low,
-                time_column_name: item.timestamp
+                time_column_name: est_dt.strftime("%m/%d/%Y")
             })
         df = pd.DataFrame(df_data)
         return df
@@ -162,7 +169,7 @@ class DataSourceHelpers:
     @classmethod
     def display_ohlc(cls, data: pd.DataFrame, 
                     ticker: str, 
-                    convert_utc: bool = True) -> None:
+                    convert_utc: bool = False) -> None:
         """Display OHLC data in a formatted way"""
         # Find time field that exists in dataframe columns
         time_field = None
